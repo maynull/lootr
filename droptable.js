@@ -3,7 +3,7 @@ const DropTableObject = function(properties) {
   this.path = properties.path;
   this.forcedDepth = properties.forcedDepth;
   this.stack = properties.stack;
-  this.weight = properties.weight;
+  this.weight = properties.weight ? properties.weight : 1;
   this.isLootable = properties.isLootable;
   this.isAlways = properties.isAlways;
   this.totalWeight = 0;
@@ -24,6 +24,10 @@ DropTable.prototype.clean = function(path) {
 DropTable.prototype.getBranch = function(name, create) {
   var path = this.clean(name).split("/");
 
+  if (!this.branchs[path[0]] && path[0] != this.name && create) {
+    this.branchNames.push(path[0]);
+    this.branchs[path[0]] = new DropTable({ name: path[0] });
+  }
   if (path.length === 1) {
     return path[0] === this.name ? this : this.branchs[path[0]];
   } else if (path.length > 1) {
@@ -31,6 +35,11 @@ DropTable.prototype.getBranch = function(name, create) {
     var newPath = path.join("/");
 
     if (this.branchs[head]) {
+      return this.branchs[head].getBranch(newPath, create);
+    }
+    if (create) {
+      this.branchNames.push(head);
+      this.branchs[head] = new DropTable({ name: head });
       return this.branchs[head].getBranch(newPath, create);
     }
   }
