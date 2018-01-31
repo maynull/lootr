@@ -10,29 +10,33 @@
 (function() {
   // global on the server, window in the browser
   var root = this;
+
   const Item = function(properties) {
-    this.properties = properties;
+    this.name = properties.name;
+    this.isAlways = properties.isAlways;
+    this.weight = properties.weight;
   };
   Item.prototype.constructor = Item;
+
   /**
    * Get a new branch
    *
    * @param {string} name Name of that branch
    */
-  function Lootr(name) {
+  function Lootr(name, weight, isAlways) {
     name = name || "root";
     name = this.clean(name);
+    weight = weight ? 1 : weight;
+    isAlways = isAlways === undefined ? false : isAlways;
 
     if (name.indexOf("/") > -1) {
       throw new Error("specified name should not contain a / separator");
     }
 
-    this.name = name;
+    this.rootItem = new Item({ name, weight, isAlways });
     this.items = [];
     this.branchs = {};
-    this.branchNames = [];
     this.modifiers = [];
-    this.dropTable = [];
   }
 
   /**
@@ -95,8 +99,19 @@
     return this;
   };
 
-  Lootr.prototype.addDropTable = function(table) {
-    table !== undefined ? (this.dropTable = []) : (this.dropTable = table);
+  /**
+   * Return all items in the current and nested branchs
+   *
+   * @return {Array} Array of items
+   */
+  Lootr.prototype.allItems = function(nesting) {
+    var items = this.items.slice();
+
+    nesting = nesting === undefined ? this.branchs.length : nesting;
+    if (nesting > 0)
+      items = items.concat(this.branchs[i].allItems(nesting - 1));
+
+    return items;
   };
 
   /**
@@ -125,14 +140,13 @@
     // neither a first-level branch
     // and we've been asked to create
     // => create the asked branch
-    if (!this.branchs[path[0]] && path[0] !== this.name && create) {
-      this.branchNames.push(path[0]);
+    if (!this.branchs[path[0]] && path[0] !== this.rootItem.name && create) {
       this.branchs[path[0]] = new Lootr(path[0]);
     }
 
     // get a branch at current level
     if (path.length === 1) {
-      return path[0] === this.name ? this : this.branchs[path[0]];
+      return path[0] === this.rootItem.name ? this : this.branchs[path[0]];
 
       // or nested
     } else if (path.length > 1) {
@@ -144,35 +158,17 @@
       }
 
       if (create) {
-        this.branchNames.push(head);
         this.branchs[head] = new Lootr(head);
         return this.branchs[head].getBranch(newPath, create);
       }
     }
   };
 
-  /**
-   * Return all items in the current and nested branchs
-   *
-   * @return {Array} Array of items
-   */
-  Lootr.prototype.allItems = function(nesting) {
-    var items = this.items.slice();
-
-    var _nesting = nesting === undefined ? this.branchNames.length : nesting;
-
-    for (var i = 0; i < _nesting; i++) {
-      items = items.concat(this.branchs[this.branchNames[i]].allItems());
-    }
-
-    return items;
-  };
-
   Lootr.prototype.getTotalWeight = function(items) {
     var totalWeight = 0;
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
-      if (!items.properties.isAlways) totalWeight += item.properties.luck;
+      if (!items.isAlways) totalWeight += item.weight;
     }
     return totalWeight;
   };
@@ -189,7 +185,7 @@
     var currentWeight = 0;
     var pickedItem = null;
     for (var i = 0; i < items.length; i++) {
-      currentWeight += items[i].properties.luck;
+      currentWeight += items[i].weight;
       if (currentWeight < weightOfPickedItem) pickedItem = items[i];
     }
 
@@ -199,7 +195,7 @@
   Lootr.prototype.getAlwaysPicks = function(items) {
     var alwaysItems = [];
     for (var i = 0; i < items.length; i++) {
-      if (item.properties.isAlways) alwaysItems.push(alwaysItems);
+      if (item.isAlways) alwaysItems.push(alwaysItems);
     }
     return alwaysItems;
   };
@@ -233,12 +229,12 @@
    *
    * @return {Array}       Array of items
    */
-  Lootr.prototype.loot = function() {
-    if (this.dropTable.length === 0 || this.dropTable === undefined)
+  Lootr.prototype.loot = function(dropTable) {
+    if (dropTable.table.length === 0 || dropTable.table === undefined)
       return null;
     var rewards = [];
     //TODO:buraya bakılır
-    //rewards.push(this.getAlwaysPicks())
+    rewards.push(this.getAlwaysPicks());
 
     for (var i = 0; i < this.dropTable.length; i++) {
       var item = this.roll(
@@ -368,6 +364,126 @@
     return (this[match.substr(1)] || "").toLowerCase();
   };
 
+  const DropTableObject = function(properties) {
+    this.name = properties.name;
+    this.path = properties.path;
+    this.forcedDepth = properties.forcedDepth;
+    this.stack = properties.stack;
+    this.weight = properties.weight;
+    this.isLootable = properties.isLootable;
+    this.isAlways = properties.isAlways;
+    this.totalWeight = 0;
+  };
+  DropTableObject.prototype.constructor = DropTableObject;
+
+  const DropTable = function(name, object) {
+    this.name = name;
+    this.objects = [];
+  };
+  DropTable.prototype.constructor = DropTable;
+
+  DropTable.prototype.addRange = function(objects) {
+    for (var i = 0; i < objects.length; i++) {
+      this.objects.push(new DropTableObject(objects[i]));
+      this.totalWeight += objects[i].weight;
+    }
+  };
+
+  DropTable.prototype.add = function(object) {
+    this.objects.push(new DropTableObject(object));
+    this.totalWeight += object.weight;
+  };
+
+  DropTable.prototype.roll = function() {};
+
+  DropTable.prototype.randomPick = function(items) {
+    var targetWeight = ~~(Math.random() * this.getTotalWeight(items));
+    var currentWeight = 0;
+    var pickedItem = null;
+    for (var i = 0; i < items.length; i++) {
+      currentWeight += items[i].weight;
+      if (currentWeight < targetWeight) pickedItem = items[i];
+    }
+
+    return pickedItem;
+  };
+
+  Lootr.prototype.roll = function(catalogPath, allowedNesting, threshold) {
+    var branch = this.getBranch(catalogPath, false);
+    var items = this.allItems(allowedNesting);
+    return branch.randomPick(
+      items,
+      allowedNesting,
+      threshold === undefined ? 1.0 : threshold
+    );
+  };
+
+  const LootManager = function(lootr) {
+    this.rootLootr = lootr;
+    this.dropTables = [];
+  };
+  LootManager.prototype.constructor = LootManager;
+
+  LootManager.prototype.addDropTable = function(dropTable) {
+    this.dropTables.push(dropTable);
+  };
+
+  LootManager.prototype.loot = function(dropTableName) {
+    if (this.dropTables.length === 0 || this.dropTables === undefined)
+      return null;
+
+    var dropTable = this.dropTables.find(element => {
+      if (element.name == dropTableName) return element;
+    });
+    var rewards = [];
+
+    for (var i = 0; i < dropTable.objects.length; i++) {
+      var doObject = dropTable.objects[i];
+    }
+
+    //TODO:buraya bakılır
+    rewards.push(this.getAlwaysPicks());
+
+    for (var i = 0; i < this.dropTable.length; i++) {
+      var item = this.roll(
+        drops[i].from,
+        drops[i].depth || Infinity,
+        drops[i].luck
+      );
+
+      if (!item) {
+        continue;
+      }
+
+      var json = JSON.stringify(item);
+      var stack = !drops[i].stack
+        ? 1
+        : ("" + drops[i].stack).indexOf("-") > -1
+          ? this.randomInRange(drops[i].stack)
+          : drops[i].stack;
+      var modify = drops[i].modify;
+
+      for (var c = 0; c < stack; c++) {
+        // clone the item from json
+        var cloned = JSON.parse(json);
+
+        // handle modifiers
+        if (modify) {
+          var modifier = this.modifiers[
+            ~~(Math.random() * this.modifiers.length)
+          ];
+
+          if (modifier) {
+            this.modify(cloned, modifier);
+          }
+        }
+
+        rewards.push(cloned);
+      }
+    }
+
+    return rewards;
+  };
   ////////////////////////////////////////////////////////
 
   // Node.js

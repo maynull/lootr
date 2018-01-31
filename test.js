@@ -117,10 +117,11 @@ exports["looting setup assertions"] = function(test) {
 exports["rollin usage"] = function(test) {
   var loot = getStuffed();
 
-  var drops = [
-    { from: "/equipment", luck: 1.0, depth: 0, stack: 1 },
-    { from: "/equipment/armor", luck: 0.5, depth: 0, stack: 2 },
-    { from: "/equipment/weapons", luck: 0.8, depth: 0, stack: "2-10" }
+  var dropTable = [
+    { path: "/equipment", weight: 1.0, depth: 0, stack: 1 },
+    { path: "/equipment/armor", weight: 0.5, depth: 0, stack: 2 },
+    { path: "/equipment/weapons", weight: 0.8, stack: "2-10" },
+    { name: "coin", weight: 0.4, stack: "10-50" }
   ];
 
   var reward = loot.loot(drops);
